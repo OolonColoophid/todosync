@@ -146,7 +146,7 @@ function help () {
 
 # shellcheck disable=SC2015
 [[ "${__usage+x}" ]] || read -r -d '' __usage <<-'EOF' || true # exits non-zero when EOF encountered
-usage: todoSync.sh ---file <name> [-vduh]
+usage: todoSync.sh --file <name> [-vduh]
 
 -f --file [arg]       File to be scanned. Required.
 -v --verbose          Enable verbose mode, print script as it is executed
@@ -166,18 +166,19 @@ todoSync.sh
 
 
 This todo synchroniser looks through a text file and identifies todo items. 
+
 Default format is:
 
 - [ ] Get the milk @shopping
 
 When this script encounters such a todo for the first time, this todo is then 
-added to the todo.txt using the standard todo.sh command see 
+added to the todotxt file using the standard todo.sh command see 
 [https://github.com/ginatrapani/todo.txt-cli]. Note that the marked todo
 text is sent to this command raw., e.g.:
 
 t add Get milk @shopping ID:4h7f
 
-(Note that a random five-letter code is added.)
+(And note that a random five-letter ID code is added.)
 
 Just after, this script flags the todo with an ID:
 
@@ -190,379 +191,409 @@ the $DONE_FILE, it will mark it as done:
 
 - [x] Get the milk @shopping, ID:4h7f
 
+But wait, there's more. The script will attempt identify
+context in terms of a heading and a project. If your file
+looks like this:
+
+# Latest list
+- [ ] Get the milk
+
+...the script will look for the most recent heading (marked
+by a hash character) and use that as context, i.e. generating
+the following todotxt command:
+
+Get the milk in 'Latest list', ID:MjFlN, SOURCE:unitTestFile.markdown
+
+Additionally, if the heading contains a project (marked by a +
+character), this will be pulled out of the heading and added to the
+todotxt command as a project. Thus, the following:
+
+# Latest list +latest
+- [ ] Get the milk
+
+...Will generate this todotxt command:
+
+Get the milk +latest in 'Latest list', ID:MjFlN, SOURCE:unitTestFile.markdown
+
 Created by Ian Hocking <ihocking@gmail.com>
 EOF
 
-	# Translate usage string -> getopts arguments, and set $arg_<flag> defaults
-	while read -r __b3bp_tmp_line; do
-		if [[ "${__b3bp_tmp_line}" =~ ^- ]]; then
-			# fetch single character version of option string
-			__b3bp_tmp_opt="${__b3bp_tmp_line%% *}"
-			__b3bp_tmp_opt="${__b3bp_tmp_opt:1}"
+# Translate usage string -> getopts arguments, and set $arg_<flag> defaults
+while read -r __b3bp_tmp_line; do
+	if [[ "${__b3bp_tmp_line}" =~ ^- ]]; then
+		# fetch single character version of option string
+		__b3bp_tmp_opt="${__b3bp_tmp_line%% *}"
+		__b3bp_tmp_opt="${__b3bp_tmp_opt:1}"
 
-			# fetch long version if present
-			__b3bp_tmp_long_opt=""
+		# fetch long version if present
+		__b3bp_tmp_long_opt=""
 
-			if [[ "${__b3bp_tmp_line}" = *"--"* ]]; then
-				__b3bp_tmp_long_opt="${__b3bp_tmp_line#*--}"
-				__b3bp_tmp_long_opt="${__b3bp_tmp_long_opt%% *}"
-			fi
-
-			# map opt long name to+from opt short name
-			printf -v "__b3bp_tmp_opt_long2short_${__b3bp_tmp_long_opt//-/_}" '%s' "${__b3bp_tmp_opt}"
-			printf -v "__b3bp_tmp_opt_short2long_${__b3bp_tmp_opt}" '%s' "${__b3bp_tmp_long_opt//-/_}"
-
-			# check if option takes an argument
-			if [[ "${__b3bp_tmp_line}" =~ \[.*\] ]]; then
-				__b3bp_tmp_opt="${__b3bp_tmp_opt}:" # add : if opt has arg
-				__b3bp_tmp_init=""  # it has an arg. init with ""
-				printf -v "__b3bp_tmp_has_arg_${__b3bp_tmp_opt:0:1}" '%s' "1"
-			elif [[ "${__b3bp_tmp_line}" =~ \{.*\} ]]; then
-				__b3bp_tmp_opt="${__b3bp_tmp_opt}:" # add : if opt has arg
-				__b3bp_tmp_init=""  # it has an arg. init with ""
-				# remember that this option requires an argument
-				printf -v "__b3bp_tmp_has_arg_${__b3bp_tmp_opt:0:1}" '%s' "2"
-			else
-				__b3bp_tmp_init="0" # it's a flag. init with 0
-				printf -v "__b3bp_tmp_has_arg_${__b3bp_tmp_opt:0:1}" '%s' "0"
-			fi
-			__b3bp_tmp_opts="${__b3bp_tmp_opts:-}${__b3bp_tmp_opt}"
+		if [[ "${__b3bp_tmp_line}" = *"--"* ]]; then
+			__b3bp_tmp_long_opt="${__b3bp_tmp_line#*--}"
+			__b3bp_tmp_long_opt="${__b3bp_tmp_long_opt%% *}"
 		fi
 
-		[[ "${__b3bp_tmp_opt:-}" ]] || continue
+		# map opt long name to+from opt short name
+		printf -v "__b3bp_tmp_opt_long2short_${__b3bp_tmp_long_opt//-/_}" '%s' "${__b3bp_tmp_opt}"
+		printf -v "__b3bp_tmp_opt_short2long_${__b3bp_tmp_opt}" '%s' "${__b3bp_tmp_long_opt//-/_}"
 
-		if [[ "${__b3bp_tmp_line}" =~ (^|\.\ *)Default= ]]; then
-			# ignore default value if option does not have an argument
-			__b3bp_tmp_varname="__b3bp_tmp_has_arg_${__b3bp_tmp_opt:0:1}"
-
-			if [[ "${!__b3bp_tmp_varname}" != "0" ]]; then
-				__b3bp_tmp_init="${__b3bp_tmp_line##*Default=}"
-				__b3bp_tmp_re='^"(.*)"$'
-				if [[ "${__b3bp_tmp_init}" =~ ${__b3bp_tmp_re} ]]; then
-					__b3bp_tmp_init="${BASH_REMATCH[1]}"
-				else
-					__b3bp_tmp_re="^'(.*)'$"
-					if [[ "${__b3bp_tmp_init}" =~ ${__b3bp_tmp_re} ]]; then
-						__b3bp_tmp_init="${BASH_REMATCH[1]}"
-					fi
-				fi
-			fi
-		fi
-
-		if [[ "${__b3bp_tmp_line}" =~ (^|\.\ *)Required\. ]]; then
+		# check if option takes an argument
+		if [[ "${__b3bp_tmp_line}" =~ \[.*\] ]]; then
+			__b3bp_tmp_opt="${__b3bp_tmp_opt}:" # add : if opt has arg
+			__b3bp_tmp_init=""  # it has an arg. init with ""
+			printf -v "__b3bp_tmp_has_arg_${__b3bp_tmp_opt:0:1}" '%s' "1"
+		elif [[ "${__b3bp_tmp_line}" =~ \{.*\} ]]; then
+			__b3bp_tmp_opt="${__b3bp_tmp_opt}:" # add : if opt has arg
+			__b3bp_tmp_init=""  # it has an arg. init with ""
 			# remember that this option requires an argument
 			printf -v "__b3bp_tmp_has_arg_${__b3bp_tmp_opt:0:1}" '%s' "2"
-		fi
-
-		printf -v "arg_${__b3bp_tmp_opt:0:1}" '%s' "${__b3bp_tmp_init}"
-	done <<< "${__usage:-}"
-
-	# run getopts only if options were specified in __usage
-	if [[ "${__b3bp_tmp_opts:-}" ]]; then
-		# Allow long options like --this
-		__b3bp_tmp_opts="${__b3bp_tmp_opts}-:"
-
-		# Reset in case getopts has been used previously in the shell.
-		OPTIND=1
-
-		# start parsing command line
-		set +o nounset # unexpected arguments will cause unbound variables
-		# to be dereferenced
-		# Overwrite $arg_<flag> defaults with the actual CLI options
-		while getopts "${__b3bp_tmp_opts}" __b3bp_tmp_opt; do
-			[[ "${__b3bp_tmp_opt}" = "?" ]] && help "Invalid use of script: ${*} "
-
-			if [[ "${__b3bp_tmp_opt}" = "-" ]]; then
-				# OPTARG is long-option-name or long-option=value
-				if [[ "${OPTARG}" =~ .*=.* ]]; then
-					# --key=value format
-					__b3bp_tmp_long_opt=${OPTARG/=*/}
-					# Set opt to the short option corresponding to the long option
-					__b3bp_tmp_varname="__b3bp_tmp_opt_long2short_${__b3bp_tmp_long_opt//-/_}"
-					printf -v "__b3bp_tmp_opt" '%s' "${!__b3bp_tmp_varname}"
-					OPTARG=${OPTARG#*=}
-				else
-					# --key value format
-					# Map long name to short version of option
-					__b3bp_tmp_varname="__b3bp_tmp_opt_long2short_${OPTARG//-/_}"
-					printf -v "__b3bp_tmp_opt" '%s' "${!__b3bp_tmp_varname}"
-					# Only assign OPTARG if option takes an argument
-					__b3bp_tmp_varname="__b3bp_tmp_has_arg_${__b3bp_tmp_opt}"
-					printf -v "OPTARG" '%s' "${@:OPTIND:${!__b3bp_tmp_varname}}"
-					# shift over the argument if argument is expected
-					((OPTIND+=__b3bp_tmp_has_arg_${__b3bp_tmp_opt}))
-				fi
-				# we have set opt/OPTARG to the short value and the argument as OPTARG if it exists
-			fi
-			__b3bp_tmp_varname="arg_${__b3bp_tmp_opt:0:1}"
-			__b3bp_tmp_default="${!__b3bp_tmp_varname}"
-
-			__b3bp_tmp_value="${OPTARG}"
-			if [[ -z "${OPTARG}" ]] && [[ "${__b3bp_tmp_default}" = "0" ]]; then
-				__b3bp_tmp_value="1"
-			fi
-
-			printf -v "${__b3bp_tmp_varname}" '%s' "${__b3bp_tmp_value}"
-			debug "cli arg ${__b3bp_tmp_varname} = (${__b3bp_tmp_default}) -> ${!__b3bp_tmp_varname}"
-		done
-		set -o nounset # no more unbound variable references expected
-
-		shift $((OPTIND-1))
-
-		if [[ "${1:-}" = "--" ]] ; then
-			shift
-		fi
-	fi
-
-
-	### Automatic validation of required option arguments
-	##############################################################################
-
-	for __b3bp_tmp_varname in ${!__b3bp_tmp_has_arg_*}; do
-		# validate only options which required an argument
-		[[ "${!__b3bp_tmp_varname}" = "2" ]] || continue
-
-		__b3bp_tmp_opt_short="${__b3bp_tmp_varname##*_}"
-		__b3bp_tmp_varname="arg_${__b3bp_tmp_opt_short}"
-		[[ "${!__b3bp_tmp_varname}" ]] && continue
-
-		__b3bp_tmp_varname="__b3bp_tmp_opt_short2long_${__b3bp_tmp_opt_short}"
-		printf -v "__b3bp_tmp_opt_long" '%s' "${!__b3bp_tmp_varname}"
-		[[ "${__b3bp_tmp_opt_long:-}" ]] && __b3bp_tmp_opt_long=" (--${__b3bp_tmp_opt_long//_/-})"
-
-		help "Option -${__b3bp_tmp_opt_short}${__b3bp_tmp_opt_long:-} requires an argument"
-	done
-
-
-	### Cleanup Environment variables
-	##############################################################################
-
-	for __tmp_varname in ${!__b3bp_tmp_*}; do
-		unset -v "${__tmp_varname}"
-	done
-
-	unset -v __tmp_varname
-
-
-	### Externally supplied __usage. Nothing else to do here
-	##############################################################################
-
-	if [[ "${__b3bp_external_usage:-}" = "true" ]]; then
-		unset -v __b3bp_external_usage
-		return
-	fi
-
-
-	### Signal trapping and backtracing
-	##############################################################################
-
-	function __b3bp_cleanup_before_exit () {
-
-		#removeTempFiles
-
-		debug "Cleaning up. Done"
-	}
-	trap __b3bp_cleanup_before_exit EXIT
-
-	# requires `set -o errtrace`
-	__b3bp_err_report() {
-		local error_code
-		error_code=${?}
-		error "Error in ${__file} in function ${1} on line ${2}"
-		exit ${error_code}
-	}
-
-	# export LOG_LEVEL=7 # Shows INFO and DEBUG
-	# export LOG_LEVEL=6 # Shows INFO
-
-
-	# All of these go to STDERR, so you can use STDOUT for piping machine readable information to other software
-	#debug "Info useful to developers for debugging the application, not useful during operations
-	#info "Normal operational messages - may be harvested for reporting, measuring throughput, etc. - no action required."
-	#notice "Events that are unusual but not error conditions - might be summarized in an email to developers or admins to spot potential problems - no immediate action required."
-	#warning "Warning messages, not an error, but indication that an error will occur if action is not taken, e.g. file system 85% full - each item must be resolved within a given time. This is a debug message"
-	#error "Non-urgent failures, these should be relayed to developers or admins; each item must be resolved within a given time."
-	#critical "Should be corrected immediately, but indicates failure in a primary system, an example is a loss of a backup ISP connection."
-	#alert "Should be corrected immediately, therefore notify staff who can fix the problem. An example would be the loss of a primary ISP connection."
-	#emergency "A \"panic\" condition usually affecting multiple apps/servers/sites. At this level it would usually notify all tech staff on call."
-
-
-	function checkSet () {
-
-		# This function inspects certain default variables (set in yaml by the user)
-		# and ensures that there are set, if needs be. If they are set, directory 
-		# or file targets are verified to exist
-
-
-		debug "Function: checkset"
-
-		# Ingore 'unbound' errors for the time being
-		set +o nounset
-
-		# shellcheck disable=SC2154
-		if [ -z "${TODO_DIR+x}" ]; then
-
-			help "Required variable \$TODO_DIR has not been set." 
-			exit 77	 
-
-		elif  [ ! -d "$TODO_DIR" ]; then
-
-
-			help "The directory of \$TODO_DIR has been set to $TODO_DIR. However, this directory does not seem to exist."
-			exit 77
-
-		fi 
-
-
-
-		# No more unbound errors expected
-		set -o nounset
-
-
-	}
-
-	function generateID () {
-
-		debug "Function: generateID"
-
-		# This function generates a random (ish) five-character mixture
-		# of upper and lower case characters
-
-		seed=$(($(date +%s%n) + $RANDOM)) 
-		echo $seed | md5 | base64 | head -c 5
-
-	}
-
-
-	function escapeRegEx () {
-
-		debug "Function: escapeRegEx"
-
-		# http://stackoverflow.com/a/2705678/120999
-		echo "$1" | sed -e 's/[]\/()$*.^|[]/\\&/g'
-	}
-
-
-
-	function sourceFileHasTodo () {
-
-		egrep -q "$todoTag" "$sourceFile" || return 1
-	}
-
-	function todoHasNoID () {
-
-		[[ "$todoSource" != *"$idTagShort"* ]] || return 1
-	}
-
-	function todoHasID () {
-
-		[[ "$todoSource" == *"$idTagShort"* ]] || return 1
-
-	}
-
-	function IDisInDoneFile () {
-
-		debug "Function: IDisInDoneFile"
-		egrep -q "$id" "$DONE_FILE"  || return 1
-
-
-
-	}
-
-	function NotMarkedAsDoneInSource () {
-
-		[[ "$todoSource" != *"$doneTagShort"* ]] || return 1 
-
-	}
-
-	function MarkedAsDoneInSource () {
-
-		[[ "$todoSource" == *"$doneTagShort"* ]] || return 1
-
-	}
-
-	function getTextOfTodosFromSource () {
-
-		todosInSource=$(egrep "$todoTag" < "$sourceFile")
-
-	}
-
-	function addIDtoTodo () {
-
-		debug "Function: addIDtoTodo"
-
-		# This gets an ID and writes the todo item,
-		# with ID, back to the source file
-
-
-
-		newID="$(generateID)"
-		debug "    New ID (\$newID): $newID"
-		todoSourceEscaped="$(echo "$todoSource" | sed -e 's/[]\/()$*.^|[]/\\&/g')"
-		todoSourceWithID=$(echo "$todoSource, ID:$newID")
-		todoSourceWithIDescaped="$(echo "$todoSourceWithID" | sed -e 's/[]\/()$*.^|[]/\\&/g')"
-		debug "    Current todo with ID added will look like: $todoSourceWithIDescaped"
-		debug "    Current todo without ID will look like:    $todoSourceEscaped"
-
-		# Now replace the old todo tag with the new one in the source file
-		# whereas replacing just one might be very 
-		# difficult
-		# Solution might be to loop through file
-
-		sourceText=$(cat "$sourceFile")
-
-		spliceOnce "$sourceText" "$todoSourceEscaped" "$todoSourceWithIDescaped" "overwrite" > "$sourceFile"
-
-		debug "    Todo with ID $newID written to $sourceFile"
-
-	}
-
-	function spliceOnce () {
-
-		debug "Function: spliceOnce"
-
-		# Insert [multi-line] REPLACEMENT string
-		# into [multi-line] SOURCE string
-		# after the line matched by PATTERN
-
-
-		# - takes the arguments:
-		#   source, pattern, replacement
-		# - returns multi-line text
-
-		sourceText="$1"
-		pattern="$2"
-		replacement="$3"
-		mode="$4"
-
-	done="false"
-
-	while read -r line; do
-		if test "${line#*$pattern}" != "$line"; then
-
-			if [[ "$mode" == "insert" ]]; then
-				echo "$line"
-			fi
-
-			if [[ "$done" == "false" ]]; then
-
-				if [[ "$line" == *"ID:"* ]]; then 
-					echo "$line"
-					continue
-				fi
-
-				echo "$line" | sed "s%$pattern%$replacement%g" 
-
-			done="true"
-
 		else
-			echo "$line"
+			__b3bp_tmp_init="0" # it's a flag. init with 0
+			printf -v "__b3bp_tmp_has_arg_${__b3bp_tmp_opt:0:1}" '%s' "0"
+		fi
+		__b3bp_tmp_opts="${__b3bp_tmp_opts:-}${__b3bp_tmp_opt}"
+	fi
 
+	[[ "${__b3bp_tmp_opt:-}" ]] || continue
+
+	if [[ "${__b3bp_tmp_line}" =~ (^|\.\ *)Default= ]]; then
+		# ignore default value if option does not have an argument
+		__b3bp_tmp_varname="__b3bp_tmp_has_arg_${__b3bp_tmp_opt:0:1}"
+
+		if [[ "${!__b3bp_tmp_varname}" != "0" ]]; then
+			__b3bp_tmp_init="${__b3bp_tmp_line##*Default=}"
+			__b3bp_tmp_re='^"(.*)"$'
+			if [[ "${__b3bp_tmp_init}" =~ ${__b3bp_tmp_re} ]]; then
+				__b3bp_tmp_init="${BASH_REMATCH[1]}"
+			else
+				__b3bp_tmp_re="^'(.*)'$"
+				if [[ "${__b3bp_tmp_init}" =~ ${__b3bp_tmp_re} ]]; then
+					__b3bp_tmp_init="${BASH_REMATCH[1]}"
+				fi
+			fi
+		fi
+	fi
+
+	if [[ "${__b3bp_tmp_line}" =~ (^|\.\ *)Required\. ]]; then
+		# remember that this option requires an argument
+		printf -v "__b3bp_tmp_has_arg_${__b3bp_tmp_opt:0:1}" '%s' "2"
+	fi
+
+	printf -v "arg_${__b3bp_tmp_opt:0:1}" '%s' "${__b3bp_tmp_init}"
+done <<< "${__usage:-}"
+
+# run getopts only if options were specified in __usage
+if [[ "${__b3bp_tmp_opts:-}" ]]; then
+	# Allow long options like --this
+	__b3bp_tmp_opts="${__b3bp_tmp_opts}-:"
+
+	# Reset in case getopts has been used previously in the shell.
+	OPTIND=1
+
+	# start parsing command line
+	set +o nounset # unexpected arguments will cause unbound variables
+	# to be dereferenced
+	# Overwrite $arg_<flag> defaults with the actual CLI options
+	while getopts "${__b3bp_tmp_opts}" __b3bp_tmp_opt; do
+		[[ "${__b3bp_tmp_opt}" = "?" ]] && help "Invalid use of script: ${*} "
+
+		if [[ "${__b3bp_tmp_opt}" = "-" ]]; then
+			# OPTARG is long-option-name or long-option=value
+			if [[ "${OPTARG}" =~ .*=.* ]]; then
+				# --key=value format
+				__b3bp_tmp_long_opt=${OPTARG/=*/}
+				# Set opt to the short option corresponding to the long option
+				__b3bp_tmp_varname="__b3bp_tmp_opt_long2short_${__b3bp_tmp_long_opt//-/_}"
+				printf -v "__b3bp_tmp_opt" '%s' "${!__b3bp_tmp_varname}"
+				OPTARG=${OPTARG#*=}
+			else
+				# --key value format
+				# Map long name to short version of option
+				__b3bp_tmp_varname="__b3bp_tmp_opt_long2short_${OPTARG//-/_}"
+				printf -v "__b3bp_tmp_opt" '%s' "${!__b3bp_tmp_varname}"
+				# Only assign OPTARG if option takes an argument
+				__b3bp_tmp_varname="__b3bp_tmp_has_arg_${__b3bp_tmp_opt}"
+				printf -v "OPTARG" '%s' "${@:OPTIND:${!__b3bp_tmp_varname}}"
+				# shift over the argument if argument is expected
+				((OPTIND+=__b3bp_tmp_has_arg_${__b3bp_tmp_opt}))
+			fi
+			# we have set opt/OPTARG to the short value and the argument as OPTARG if it exists
+		fi
+		__b3bp_tmp_varname="arg_${__b3bp_tmp_opt:0:1}"
+		__b3bp_tmp_default="${!__b3bp_tmp_varname}"
+
+		__b3bp_tmp_value="${OPTARG}"
+		if [[ -z "${OPTARG}" ]] && [[ "${__b3bp_tmp_default}" = "0" ]]; then
+			__b3bp_tmp_value="1"
 		fi
 
-		continue	
+		printf -v "${__b3bp_tmp_varname}" '%s' "${__b3bp_tmp_value}"
+		debug "cli arg ${__b3bp_tmp_varname} = (${__b3bp_tmp_default}) -> ${!__b3bp_tmp_varname}"
+	done
+	set -o nounset # no more unbound variable references expected
+
+	shift $((OPTIND-1))
+
+	if [[ "${1:-}" = "--" ]] ; then
+		shift
 	fi
-	echo "$line"
+fi
+
+
+### Automatic validation of required option arguments
+##############################################################################
+
+for __b3bp_tmp_varname in ${!__b3bp_tmp_has_arg_*}; do
+	# validate only options which required an argument
+	[[ "${!__b3bp_tmp_varname}" = "2" ]] || continue
+
+	__b3bp_tmp_opt_short="${__b3bp_tmp_varname##*_}"
+	__b3bp_tmp_varname="arg_${__b3bp_tmp_opt_short}"
+	[[ "${!__b3bp_tmp_varname}" ]] && continue
+
+	__b3bp_tmp_varname="__b3bp_tmp_opt_short2long_${__b3bp_tmp_opt_short}"
+	printf -v "__b3bp_tmp_opt_long" '%s' "${!__b3bp_tmp_varname}"
+	[[ "${__b3bp_tmp_opt_long:-}" ]] && __b3bp_tmp_opt_long=" (--${__b3bp_tmp_opt_long//_/-})"
+
+	help "Option -${__b3bp_tmp_opt_short}${__b3bp_tmp_opt_long:-} requires an argument"
+done
+
+
+### Cleanup Environment variables
+##############################################################################
+
+for __tmp_varname in ${!__b3bp_tmp_*}; do
+	unset -v "${__tmp_varname}"
+done
+
+unset -v __tmp_varname
+
+
+### Externally supplied __usage. Nothing else to do here
+##############################################################################
+
+if [[ "${__b3bp_external_usage:-}" = "true" ]]; then
+	unset -v __b3bp_external_usage
+	return
+fi
+
+
+### Signal trapping and backtracing
+##############################################################################
+
+function __b3bp_cleanup_before_exit () {
+
+	#removeTempFiles
+
+	debug "Cleaning up. Done"
+}
+trap __b3bp_cleanup_before_exit EXIT
+
+# requires `set -o errtrace`
+__b3bp_err_report() {
+	local error_code
+	error_code=${?}
+	error "Error in ${__file} in function ${1} on line ${2}"
+	exit ${error_code}
+}
+
+# export LOG_LEVEL=7 # Shows INFO and DEBUG
+# export LOG_LEVEL=6 # Shows INFO
+
+
+# All of these go to STDERR, so you can use STDOUT for piping machine readable information to other software
+#debug "Info useful to developers for debugging the application, not useful during operations
+#info "Normal operational messages - may be harvested for reporting, measuring throughput, etc. - no action required."
+#notice "Events that are unusual but not error conditions - might be summarized in an email to developers or admins to spot potential problems - no immediate action required."
+#warning "Warning messages, not an error, but indication that an error will occur if action is not taken, e.g. file system 85% full - each item must be resolved within a given time. This is a debug message"
+#error "Non-urgent failures, these should be relayed to developers or admins; each item must be resolved within a given time."
+#critical "Should be corrected immediately, but indicates failure in a primary system, an example is a loss of a backup ISP connection."
+#alert "Should be corrected immediately, therefore notify staff who can fix the problem. An example would be the loss of a primary ISP connection."
+#emergency "A \"panic\" condition usually affecting multiple apps/servers/sites. At this level it would usually notify all tech staff on call."
+
+
+function checkSet () {
+
+	# This function inspects certain default variables (set in yaml by the user)
+	# and ensures that there are set, if needs be. If they are set, directory 
+	# or file targets are verified to exist
+
+
+	debug "Function: checkset"
+
+	# Ingore 'unbound' errors for the time being
+	set +o nounset
+
+	# shellcheck disable=SC2154
+	if [ -z "${TODO_DIR+x}" ]; then
+
+		help "Required variable \$TODO_DIR has not been set." 
+		exit 77	 
+
+	elif  [ ! -d "$TODO_DIR" ]; then
+
+
+		help "The directory of \$TODO_DIR has been set to $TODO_DIR. However, this directory does not seem to exist."
+		exit 77
+
+	fi 
+
+
+
+	# No more unbound errors expected
+	set -o nounset
+
+
+}
+
+function generateID () {
+
+	debug "Function: generateID"
+
+	# This function generates a random (ish) five-character mixture
+	# of upper and lower case characters
+
+	seed=$(($(date +%s%n) + $RANDOM)) 
+	echo $seed | md5 | base64 | head -c 5
+
+}
+
+
+function escapeRegEx () {
+
+	debug "Function: escapeRegEx"
+
+	# http://stackoverflow.com/a/2705678/120999
+	echo "$1" | sed -e 's/[]\/()$*.^|[]/\\&/g'
+}
+
+
+
+function sourceFileHasTodo () {
+
+	egrep -q "$todoTag" "$sourceFile" || return 1
+}
+
+function todoHasNoID () {
+
+	[[ "$todoSource" != *"$idTagShort"* ]] || return 1
+}
+
+function todoHasID () {
+
+	[[ "$todoSource" == *"$idTagShort"* ]] || return 1
+
+}
+
+function IDisInDoneFile () {
+
+	debug "Function: IDisInDoneFile"
+	egrep -q "$id" "$DONE_FILE"  || return 1
+
+
+
+}
+
+function NotMarkedAsDoneInSource () {
+
+	[[ "$todoSource" != *"$doneTagShort"* ]] || return 1 
+
+}
+
+function MarkedAsDoneInSource () {
+
+	[[ "$todoSource" == *"$doneTagShort"* ]] || return 1
+
+}
+
+function getTextOfTodosFromSource () {
+
+	todosInSource=$(egrep "$todoTag" < "$sourceFile")
+
+}
+
+function addIDtoTodo () {
+
+	debug "Function: addIDtoTodo"
+
+	# This gets an ID and writes the todo item,
+	# with ID, back to the source file
+
+	newID="$(generateID)"
+	debug "    New ID (\$newID): $newID"
+	todoSourceEscaped="$(echo "$todoSource" | sed -e 's/[]\/()$*.^|[]/\\&/g')"
+	todoSourceWithID=$(echo "$todoSource, ID:$newID")
+	todoSourceWithIDescaped="$(echo "$todoSourceWithID" | sed -e 's/[]\/()$*.^|[]/\\&/g')"
+	debug "    Current todo with ID added will look like: $todoSourceWithIDescaped"
+	debug "    Current todo without ID will look like:    $todoSourceEscaped"
+
+	# Now replace the old todo tag with the new one in the source file
+	# whereas replacing just one might be very 
+	# difficult
+	# Solution might be to loop through file
+
+	sourceText=$(cat "$sourceFile")
+
+	if [[ "$DUMMY_RUN" = "true" ]]; then
+
+		echo "[Dummy run:] Here the script would add an ID $newID to $todoSource in $sourceFile"
+
+	else
+		spliceOnce "$sourceText" "$todoSourceEscaped" "$todoSourceWithIDescaped" "overwrite" > "$sourceFile"
+	fi
+
+
+
+	debug "    Todo with ID $newID written to $sourceFile"
+
+}
+
+function spliceOnce () {
+
+	debug "Function: spliceOnce"
+
+	# Insert [multi-line] REPLACEMENT string
+	# into [multi-line] SOURCE string
+	# after the line matched by PATTERN
+
+
+	# - takes the arguments:
+	#   source, pattern, replacement
+	# - returns multi-line text
+
+	sourceText="$1"
+	pattern="$2"
+	replacement="$3"
+	mode="$4"
+
+done="false"
+
+while read -r line; do
+	if test "${line#*$pattern}" != "$line"; then
+
+		if [[ "$mode" == "insert" ]]; then
+			echo "$line"
+		fi
+
+		if [[ "$done" == "false" ]]; then
+
+			if [[ "$line" == *"ID:"* ]]; then 
+				echo "$line"
+				continue
+			fi
+
+			echo "$line" | sed "s%$pattern%$replacement%g" 
+
+		done="true"
+
+	else
+		echo "$line"
+
+	fi
+
+	continue	
+fi
+echo "$line"
 done < <(echo "$sourceText" )
 
 debug "Function: splice completed for pattern $pattern"
@@ -585,16 +616,33 @@ function addTodoInTodotxt () {
 
 		todoSourceWithIDwithoutProject="$(echo $todoSource | sed "s@$todoProject@@")"
 		todoSourceSection="$(echo $todoSourceSection | sed "s@ $todoProject@@")"
-	debug "                         todoSourceWithIDwithoutProject is $todoSourceWithIDwithoutProject"
-	debug "                         todoProject is $todoProject"
-	
-else todoSourceWithIDwithoutProject="$todoSource"
+		debug "                         todoSourceWithIDwithoutProject is $todoSourceWithIDwithoutProject"
+		debug "                         todoProject is $todoProject"
+
+	else todoSourceWithIDwithoutProject="$todoSource"
 
 	fi
-	todoTxtCommand="$(echo "$todoSourceWithIDwithoutProject $todoProject in '$todoSourceSection', ID:$newID, SOURCE:"${sourceFile##*/}"" | sed "s/$todoTag//g")"
-	debug "    Command to be passed to todo.sh (\$todoTxtCommand): $todoTxtCommand"
-	todo.sh add "$todoTxtCommand"
 
+	if [[ "$todoSourceSection" = "unknown" ]]; then
+
+		echo "todoSourceSection is $todoSourceSection"
+
+		todoTxtCommand="$(echo "$todoSourceWithIDwithoutProject $todoProject, ID:$newID, SOURCE:"${sourceFile##*/}"" | sed "s/$todoTag//g")"
+
+	else
+
+		todoTxtCommand="$(echo "$todoSourceWithIDwithoutProject $todoProject in '$todoSourceSection', ID:$newID, SOURCE:"${sourceFile##*/}"" | sed "s/$todoTag//g")"
+
+	fi
+
+	debug "    Command to be passed to todo.sh (\$todoTxtCommand): $todoTxtCommand"
+
+	if [[ "$DUMMY_RUN" = "true" ]]; then
+
+		echo "[Dummy run:] The command to be passed to todo.sh is: $todoTxtCommand"
+	else
+		todo.sh add "$todoTxtCommand"
+	fi
 }
 
 function getIDfromTodoSource () {
@@ -621,7 +669,13 @@ function getDoneFormOfTodoSource () {
 function writeDoneToSource () {
 
 	# Now replace the old todo tag with the new one in the source file
-	sed -i "" "s/$(echo "$todoSourceWithIDescaped")/$(echo "$todoSourceWithIDescapedDone")/g" "$sourceFile"
+
+	if [[ "$DUMMY_RUN" = "true" ]]; then
+
+		echo "[Dummy run:] Here the script would mark $todoSourceWithID as done in the source file, $sourceFile"
+	else
+		sed -i "" "s/$(echo "$todoSourceWithIDescaped")/$(echo "$todoSourceWithIDescapedDone")/g" "$sourceFile"
+	fi
 
 
 
@@ -649,7 +703,15 @@ function getTodoSourceLine () {
 function setAsDoneInTodotxt () {
 
 
-	todo.sh do "$todoTxtNumber"
+	if [[ "$DUMMY_RUN" = "true" ]]; then
+
+		echo "[Dummy run:] Here the script would mark todo number $todoTxtNumber as done in the todotxt todo list"
+	else
+		todo.sh do "$todoTxtNumber"
+	fi
+
+
+
 
 }
 
@@ -725,19 +787,19 @@ fi
 # Detect dummy run
 if [[ "${arg_u:?}" = "1" ]]; then
 	DUMMY_RUN="true"
+	echo "todoSync is in dummy run mode"
 else
 	DUMMY_RUN="false"
 fi
 
 # Detect debug mode
 if [[ "${arg_d:?}" = "1" ]]; then
-	set -o xtrace
+	# set -o xtrace
 	LOG_LEVEL="7"
 	# Enable error backtracing
 	trap '__b3bp_err_report "${FUNCNAME:-.}" ${LINENO}' ERR
 fi
 
-LOG_LEVEL=7
 
 checkSet # Have the shell variables refering to todo.txt files etc. been set?
 
