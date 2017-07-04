@@ -1,5 +1,13 @@
 #!/usr/bin/env bash
 
+
+#Problems:
+
+#If source todo contains &, part of the todo is printed back to the file
+
+#If source todo contains (), todo fails to be written back
+
+
 # This script:
 #
 #  - Scans text files for todo items and syncs them with todos in
@@ -462,9 +470,10 @@ function generateID () {
 function escapeRegEx () {
 
 	debug "Function: escapeRegEx"
+			pipedInput="$(cat)" # Capture input from Stdin
 
 	# http://stackoverflow.com/a/2705678/120999
-	echo "$1" | sed -e 's/[]\/()$*.^|[]/\\&/g'
+	echo "$pipedInput" | sed -e 's/[]\/$*.^|[]/\\&/g'
 }
 
 
@@ -521,9 +530,9 @@ function addIDtoTodo () {
 
 	newID="$(generateID)"
 	debug "    New ID (\$newID): $newID"
-	todoSourceEscaped="$(echo "$todoSource" | sed -e 's/[]\/()$*.^|[]/\\&/g')"
+	todoSourceEscaped="$(echo "$todoSource" | escapeRegEx )"
 	todoSourceWithID=$(echo "$todoSource, ID:$newID")
-	todoSourceWithIDescaped="$(echo "$todoSourceWithID" | sed -e 's/[]\/()$*.^|[]/\\&/g')"
+	todoSourceWithIDescaped="$(echo "$todoSourceWithID" | escapeRegEx )"
 	debug "    Current todo with ID added will look like: $todoSourceWithIDescaped"
 	debug "    Current todo without ID will look like:    $todoSourceEscaped"
 
@@ -582,7 +591,7 @@ while read -r line; do
 				continue
 			fi
 
-			echo "$line" | sed "s%$pattern%$replacement%g" 
+			echo "$line" | sed "s/$pattern/$replacement/g" 
 
 		done="true"
 
@@ -625,7 +634,6 @@ function addTodoInTodotxt () {
 
 	if [[ "$todoSourceSection" = "unknown" ]]; then
 
-		echo "todoSourceSection is $todoSourceSection"
 
 		todoTxtCommand="$(echo "$todoSourceWithIDwithoutProject $todoProject, ID:$newID, SOURCE:"${sourceFile##*/}"" | sed "s/$todoTag//g")"
 
@@ -636,6 +644,8 @@ function addTodoInTodotxt () {
 	fi
 
 	debug "    Command to be passed to todo.sh (\$todoTxtCommand): $todoTxtCommand"
+
+
 
 	if [[ "$DUMMY_RUN" = "true" ]]; then
 
@@ -657,9 +667,9 @@ function getIDfromTodoSource () {
 function getDoneFormOfTodoSource () {
 
 	debug "                     Function: getDoneFormOfToDoSource"
-	todoSourceWithIDescaped="$(echo "$todoSource" | sed -e 's/[]\/()$*.^|[]/\\&/g')"
+	todoSourceWithIDescaped="$(echo "$todoSource" | escapeRegEx)"
 
-	todoSourceWithIDescapedDone="$(echo "$todoSource" | sed "s/$(echo $todoTag)/$(echo $doneTag)/g" | sed 's/^\^//' | sed -e 's/[]\/()$*.^|[]/\\&/g')"
+	todoSourceWithIDescapedDone="$(echo "$todoSource" | sed "s/$(echo $todoTag)/$(echo $doneTag)/g" | sed 's/^\^//' | escapeRegEx)"
 
 	debug "                     todoSourceWithIDescapedDone=$todoSourceWithIDescapedDone"
 
@@ -727,11 +737,17 @@ function getTodoContext () {
 	todoSourceSection=""
 	todoSourceSection="$(cat "$sourceFile" | tail -r | sed "/^>/ d" | sed -n "/$(echo "$todoSourceWithIDescaped")/,/#/p" | tail -1 | sed 's/#//g ; s/^ *//g')"
 
+	
+	if [[ "$DUMMY_RUN" = "true" ]]; then
+		todoSourceSection="$(cat "$sourceFile" | tail -r | sed "/^>/ d" | sed -n "/$(echo "$todoSourceEscaped")/,/#/p" | tail -1 | sed 's/#//g ; s/^ *//g')"
+	fi
+		
 	if [ -z "$todoSourceSection" ]; then
 
 		todoSourceSection="unknown"
 
 	fi
+
 
 
 	todoProject=""
