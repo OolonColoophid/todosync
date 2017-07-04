@@ -473,7 +473,7 @@ function escapeRegEx () {
 			pipedInput="$(cat)" # Capture input from Stdin
 
 	# http://stackoverflow.com/a/2705678/120999
-	echo "$pipedInput" | sed -e 's/[]\/$*.^|[]/\\&/g'
+	echo "$pipedInput" | sed -e 's/[]\/$*.^|[]/\\&/g' | sed 's/\&/\\&/g'
 }
 
 
