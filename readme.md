@@ -1,5 +1,7 @@
 # TodoSync
 
+NOTE: I'm no longer working on this, having discovered Org Mode in Emacs!
+
 Scan a text file that contains todos and synchronise them with [TodoTxt](http://todotxt.com).
 
 
